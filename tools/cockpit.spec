@@ -53,13 +53,22 @@ Version:        %{tag}
 Release:        %{rev}%{?dist}
 Summary:        A user interface for Linux servers
 
+%if 0%{?suse_version}
+License:        LGPL-2.1+
+%else
 License:        LGPLv2+
+%endif
 URL:            http://cockpit-project.org/
 
 %if %{defined gitcommit}
 Source0:        cockpit-%{version}.tar.gz
 %else
 Source0:        https://github.com/cockpit-project/cockpit/releases/download/%{version}/cockpit-%{version}.tar.bz2
+%endif
+%if 0%{?suse_version}
+Source1:        cockpit-suse.pam
+%else
+Source1:        cockpit-fedora.pam
 %endif
 
 BuildRequires: pkgconfig(gio-unix-2.0)
@@ -74,6 +83,15 @@ BuildRequires: openssl-devel
 BuildRequires: zlib-devel
 BuildRequires: krb5-devel
 BuildRequires: libxslt-devel
+%if 0%{?suse_version}
+%define extra_flags CFLAGS='$(RPM_OPT_FLAGS)'
+BuildRequires: update-desktop-files
+BuildRequires: docbook-xsl-stylesheets
+BuildRequires: keyutils-devel
+BuildRequires: dbus-1-devel
+BuildRequires: libpcp-devel
+%{?systemd_requires}
+%else
 BuildRequires: docbook-style-xsl
 BuildRequires: keyutils-libs-devel
 BuildRequires: glib-networking
@@ -83,6 +101,10 @@ BuildRequires: glib2-devel >= 2.37.4
 BuildRequires: systemd-devel
 BuildRequires: pcp-libs-devel
 BuildRequires: gdb
+BuildRequires: glib-networking
+BuildRequires: systemd
+BuildRequires: polkit
+
 
 %if %{defined gitcommit}
 BuildRequires: npm
@@ -188,6 +210,9 @@ rm -rf %{buildroot}/%{_datadir}/%{name}/playground
 mkdir -p $RPM_BUILD_ROOT%{_sysconfdir}/pam.d
 install -p -m 644 tools/cockpit.pam $RPM_BUILD_ROOT%{_sysconfdir}/pam.d/cockpit
 rm -f %{buildroot}/%{_libdir}/cockpit/*.so
+%if 0%{?suse_version}
+install -d %{buildroot}%{_docdir}/%{name}
+%endif
 install -p -m 644 AUTHORS COPYING README.md %{buildroot}%{_docdir}/%{name}/
 %if 0%{?selinux}
 install -d %{buildroot}%{_datadir}/selinux/targeted
@@ -229,6 +254,10 @@ find %{buildroot}%{_datadir}/%{name}/docker -type f >> docker.list
 rm -rf %{buildroot}/%{_datadir}/%{name}/docker
 touch docker.list
 %endif
+%if 0%{?suse_version}
+%suse_update_desktop_file -u -r -G 'Cockpit Server Manager' %{name} System Utility
+mv %{buildroot}%{_datadir}/doc/%{name} %{buildroot}%{_docdir}/%{name}/html
+%endif
 
 %ifarch x86_64
 echo '%dir %{_datadir}/%{name}/kubernetes' > kubernetes.list
@@ -265,6 +294,9 @@ cat subscriptions.list docker.list networkmanager.list >> shell.list
 %{nil}
 
 %files
+%if 0%{?suse_version}
+%defattr(-,root,root)
+%endif
 %{_docdir}/%{name}/AUTHORS
 %{_docdir}/%{name}/COPYING
 %{_docdir}/%{name}/README.md
@@ -274,12 +306,29 @@ cat subscriptions.list docker.list networkmanager.list >> shell.list
 %{_datadir}/pixmaps
 
 %files bridge
+%if 0%{?suse_version}
+%defattr(-,root,root)
+%endif
 %doc %{_mandir}/man1/cockpit-bridge.1.gz
 %{_bindir}/cockpit-bridge
 %attr(4755, -, -) %{_libexecdir}/cockpit-polkit
+%if 0%{?suse_version}
+%dir %{_libdir}/security
+%endif
 %{_libdir}/security/pam_reauthorize.so
 
+%files daemon
+%if 0%{?suse_version}
+%defattr(-,root,root)
+%endif
+%doc %{_mandir}/man8/cockpitd.8.gz
+%{_datadir}/dbus-1/services/com.redhat.Cockpit.service
+%{_libexecdir}/cockpitd
+
 %files doc
+%if 0%{?suse_version}
+%defattr(-,root,root)
+%endif
 %exclude %{_docdir}/%{name}/AUTHORS
 %exclude %{_docdir}/%{name}/COPYING
 %exclude %{_docdir}/%{name}/README.md
@@ -297,7 +346,25 @@ cat subscriptions.list docker.list networkmanager.list >> shell.list
 # be out of sync with reality.
 /usr/share/pcp/lib/pmlogger reload
 
+%files shell
+%if 0%{?suse_version}
+%defattr(-,root,root)
+%endif
+%{_datadir}/%{name}/base
+%{_datadir}/%{name}/shell
+%{_datadir}/%{name}/playground
+%{_datadir}/%{name}/server-systemd
+
+%if !0%{?suse_version}
+%post shell
+# HACK - https://bugzilla.redhat.com/show_bug.cgi?id=1185749
+( cd /var/lib/pcp/pmns && ./Rebuild -du )
+%endif
+
 %files ws
+%if 0%{?suse_version}
+%defattr(-,root,root)
+%endif
 %doc %{_mandir}/man5/cockpit.conf.5.gz
 %doc %{_mandir}/man8/cockpit-ws.8.gz
 %doc %{_mandir}/man8/remotectl.8.gz
@@ -306,29 +373,50 @@ cat subscriptions.list docker.list networkmanager.list >> shell.list
 %config(noreplace) %{_sysconfdir}/pam.d/cockpit
 %{_unitdir}/cockpit.service
 %{_unitdir}/cockpit.socket
+%if 0%{?suse_version}
+%dir %{_prefix}/lib/firewalld
+%dir %{_prefix}/lib/firewalld/services
+%endif
 %{_prefix}/lib/firewalld/services/cockpit.xml
 %{_sbindir}/remotectl
 %{_libdir}/security/pam_ssh_add.so
 %{_libexecdir}/cockpit-ws
 %attr(4750, root, cockpit-ws) %{_libexecdir}/cockpit-session
+%if !0%{?suse_version}
 %attr(775, -, wheel) %{_localstatedir}/lib/%{name}
+%endif
 %{_datadir}/%{name}/static
 %{_datadir}/%{name}/branding
 
 %pre ws
+%if 0%{?suse_version}
+%service_add_pre %{name}.service
+%endif
 getent group cockpit-ws >/dev/null || groupadd -r cockpit-ws
 getent passwd cockpit-ws >/dev/null || useradd -r -g cockpit-ws -d / -s /sbin/nologin -c "User for cockpit-ws" cockpit-ws
 
 %post ws
+%if 0%{?suse_version}
+%service_add_post %{name}.service
+%else
 %systemd_post cockpit.socket
+%endif
 # firewalld only partially picks up changes to its services files without this
 test -f %{_bindir}/firewall-cmd && firewall-cmd --reload --quiet || true
 
 %preun ws
+%if 0%{?suse_version}
+%service_del_preun %{name}.service
+%else
 %systemd_preun cockpit.socket
+%endif
 
 %postun ws
+%if 0%{?suse_version}
+%service_del_postun %{name}.service
+%else
 %systemd_postun_with_restart cockpit.socket
+%endif
 
 %package shell
 Summary: Cockpit Shell user interface package
@@ -404,6 +492,9 @@ The Cockpit components for interacting with Docker and user interface.
 This package is not yet complete.
 
 %files docker -f docker.list
+%if 0%{?suse_version}
+%defattr(-,root,root)
+%endif
 
 %endif
 
@@ -434,6 +525,9 @@ This package contains programs and other files for testing Cockpit, and
 pulls in some necessary packages via dependencies.
 
 %files test-assets
+%if 0%{?suse_version}
+%defattr(-,root,root)
+%endif
 %{_datadir}/%{name}/playground
 %{_datadir}/cockpit-test-assets
 %{_datadir}/polkit-1/rules.d
