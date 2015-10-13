@@ -84,6 +84,9 @@ BuildRequires: zlib-devel
 BuildRequires: krb5-devel
 BuildRequires: libxslt-devel
 %if 0%{?suse_version}
+BuildRequires: -post-build-checks
+BuildRequires: -rpmlint-mini
+BuildRequires: -rpmlint-Factory
 %define extra_flags CFLAGS='$(RPM_OPT_FLAGS)'
 BuildRequires: update-desktop-files
 BuildRequires: docbook-xsl-stylesheets
@@ -91,6 +94,8 @@ BuildRequires: keyutils-devel
 BuildRequires: dbus-1-devel
 BuildRequires: libpcp-devel
 %{?systemd_requires}
+BuildRequires: -systemd-mini
+BuildRequires: -systemd-mini-devel
 %else
 BuildRequires: docbook-style-xsl
 BuildRequires: keyutils-libs-devel
@@ -257,6 +262,13 @@ touch docker.list
 %if 0%{?suse_version}
 %suse_update_desktop_file -u -r -G 'Cockpit Server Manager' %{name} System Utility
 mv %{buildroot}%{_datadir}/doc/%{name} %{buildroot}%{_docdir}/%{name}/html
+ln -sf /sbin/service $RPM_BUILD_ROOT/usr/sbin/rc%{name}
+# no firewalld on SUSE
+rm -rf %{buildroot}%{_prefix}/lib/firewalld
+# PAM security
+install -d %{buildroot}/%{_lib}/security
+mv %{buildroot}%{_libdir}/security/pam_reauthorize.so %{buildroot}/%{_lib}/security
+rm -rf %{_libdir}/security
 %endif
 
 %ifarch x86_64
@@ -313,9 +325,10 @@ cat subscriptions.list docker.list networkmanager.list >> shell.list
 %{_bindir}/cockpit-bridge
 %attr(4755, -, -) %{_libexecdir}/cockpit-polkit
 %if 0%{?suse_version}
-%dir %{_libdir}/security
-%endif
+/%{_lib}/security/pam_reauthorize.so
+%else
 %{_libdir}/security/pam_reauthorize.so
+%endif
 
 %files daemon
 %if 0%{?suse_version}
@@ -362,6 +375,7 @@ cat subscriptions.list docker.list networkmanager.list >> shell.list
 %endif
 
 %files ws
+%{_sbindir}/rccockpit
 %if 0%{?suse_version}
 %defattr(-,root,root)
 %endif
@@ -373,11 +387,9 @@ cat subscriptions.list docker.list networkmanager.list >> shell.list
 %config(noreplace) %{_sysconfdir}/pam.d/cockpit
 %{_unitdir}/cockpit.service
 %{_unitdir}/cockpit.socket
-%if 0%{?suse_version}
-%dir %{_prefix}/lib/firewalld
-%dir %{_prefix}/lib/firewalld/services
-%endif
+%if !0%{?suse_version}
 %{_prefix}/lib/firewalld/services/cockpit.xml
+%endif
 %{_sbindir}/remotectl
 %{_libdir}/security/pam_ssh_add.so
 %{_libexecdir}/cockpit-ws
@@ -390,14 +402,14 @@ cat subscriptions.list docker.list networkmanager.list >> shell.list
 
 %pre ws
 %if 0%{?suse_version}
-%service_add_pre %{name}.service
+%service_add_pre %{name}.service %{name}.socket
 %endif
 getent group cockpit-ws >/dev/null || groupadd -r cockpit-ws
 getent passwd cockpit-ws >/dev/null || useradd -r -g cockpit-ws -d / -s /sbin/nologin -c "User for cockpit-ws" cockpit-ws
 
 %post ws
 %if 0%{?suse_version}
-%service_add_post %{name}.service
+%service_add_post %{name}.service %{name}.socket
 %else
 %systemd_post cockpit.socket
 %endif
@@ -406,14 +418,14 @@ test -f %{_bindir}/firewall-cmd && firewall-cmd --reload --quiet || true
 
 %preun ws
 %if 0%{?suse_version}
-%service_del_preun %{name}.service
+%service_del_preun %{name}.service %{name}.socket
 %else
 %systemd_preun cockpit.socket
 %endif
 
 %postun ws
 %if 0%{?suse_version}
-%service_del_postun %{name}.service
+%service_del_postun %{name}.service %{name}.socket
 %else
 %systemd_postun_with_restart cockpit.socket
 %endif
